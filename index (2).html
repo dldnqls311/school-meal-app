@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>급식 알리미</title>
+
+  <style>
+    :root {
+      --primary: #4258b5;
+      --primary-light: #eaf0ff;
+      --background: #f5f7fb;
+      --text: #202636;
+      --secondary: #777;
+      --white: #fff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      color: var(--text);
+    }
+
+    header {
+      background: var(--primary);
+      color: white;
+      padding: 28px 20px;
+    }
+
+    header h1 {
+      font-size: 25px;
+      margin: 0 0 8px;
+    }
+
+    header p {
+      margin: 0;
+      opacity: 0.85;
+      font-size: 14px;
+    }
+
+    main {
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+
+    .card {
+      background: var(--white);
+      border-radius: 18px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 3px 15px rgba(0,0,0,0.04);
+    }
+
+    .date-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+
+    button:active {
+      transform: scale(0.96);
+    }
+
+    .date-button {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    #date {
+      font-weight: bold;
+      text-align: center;
+      font-size: 15px;
+    }
+
+    .today-button {
+      display: block;
+      margin: 0 auto 16px;
+      background: #e8ebf4;
+      color: #4258b5;
+    }
+
+    h2 {
+      font-size: 20px;
+      margin: 0 0 15px;
+    }
+
+    .meal-type {
+      color: var(--primary);
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .menu-item {
+      padding: 14px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .menu-item:last-child {
+      border-bottom: none;
+    }
+
+    .menu-name {
+      font-weight: 600;
+      font-size: 17px;
+    }
+
+    .menu-calorie {
+      color: #888;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .total-card {
+      background: var(--primary-light);
+    }
+
+    .total-label {
+      font-size: 15px;
+      color: #526285;
+    }
+
+    #totalCalories {
+      display: block;
+      font-size: 32px;
+      margin-top: 12px;
+      color: #3455c5;
+    }
+
+    .refresh {
+      width: 100%;
+      background: var(--primary);
+      color: white;
+      font-weight: bold;
+      padding: 16px;
+    }
+
+    #status {
+      text-align: center;
+      font-size: 13px;
+      color: var(--secondary);
+      margin-top: 18px;
+      line-height: 1.6;
+    }
+
+    .notice {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.7;
+      margin-top: 12px;
+    }
+
+    .empty {
+      padding: 30px 0;
+      text-align: center;
+      color: #888;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>🍱 급식 알리미</h1>
+    <p id="schoolName">춘천한샘고등학교</p>
+  </header>
+
+  <main>
+
+    <div class="card date-box">
+      <button class="date-button" id="prevBtn">❮</button>
+      <span id="date"></span>
+      <button class="date-button" id="nextBtn">❯</button>
+    </div>
+
+    <button class="today-button" id="todayBtn">
+      오늘로 돌아가기
+    </button>
+
+    <div class="card">
+      <h2>오늘의 급식</h2>
+      <div class="meal-type">중식</div>
+
+      <div id="menu">
+        급식 정보를 불러오는 중...
+      </div>
+    </div>
+
+    <div class="card total-card">
+      <div class="total-label">총칼로리</div>
+      <strong id="totalCalories">- kcal</strong>
+      <p class="notice">
+        총칼로리는 NEIS에서 제공하는 공식 급식 정보입니다.
+      </p>
+    </div>
+
+    <button class="refresh" id="refreshBtn">
+      새로고침
+    </button>
+
+    <p id="status"></p>
+
+  </main>
+
+  <script>
+    // ======================================
+    // 1. 기본 설정
+    // ======================================
+
+    const NEIS_BASE_URL = "https://open.neis.go.kr/hub";
+    const SCHOOL_NAME = "춘천한샘고등학교";
+
+    let officeCode = "";
+    let schoolCode = "";
+    let schoolInfoCache = null;
+    let requestId = 0;
+
+    const menuEl = document.getElementById("menu");
+    const dateEl = document.getElementById("date");
+    const calorieEl = document.getElementById("totalCalories");
+    const statusEl = document.getElementById("status");
+
+    // ======================================
+    // 2. 한국 시간 기준 날짜
+    // ======================================
+
+    function getKoreaToday() {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(new Date());
+
+      const values = {};
+
+      for (const part of parts) {
+        values[part.type] = part.value;
+      }
+
+      return new Date(
+        Number(values.year),
+        Number(values.month) - 1,
+        Number(values.day),
+        12
+      );
+    }
+
+    let selectedDate = getKoreaToday();
+
+    function formatDate(date) {
+      const year = date.getFullYear();
+
+      const month = String(
+        date.getMonth() + 1
+      ).padStart(2, "0");
+
+      const day = String(
+        date.getDate()
+      ).padStart(2, "0");
+
+      return `${year}${month}${day}`;
+    }
+
+    function displayDate() {
+      dateEl.textContent =
+        selectedDate.toLocaleDateString("ko-KR", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          weekday: "short"
+        });
+    }
+
+    function changeDate(days) {
+      const nextDate = new Date(selectedDate);
+
+      nextDate.setDate(nextDate.getDate() + days);
+
+      selectedDate = nextDate;
+
+      displayDate();
+      loadMeal();
+    }
+
+    function goToday() {
+      selectedDate = getKoreaToday();
+
+      displayDate();
+      loadMeal();
+    }
+
+    // ======================================
+    // 3. JSON 데이터 요청
+    // ======================================
+
+    async function requestJson(url) {
+      const response = await fetch(url, {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `서버 통신 오류: HTTP ${response.status}`
+        );
+      }
+
+      const data = await response.json();
+
+      // NEIS가 오류 정보를 반환한 경우
+      if (data.RESULT) {
+        const code = data.RESULT.CODE;
+
+        if (code !== "INFO-200") {
+          throw new Error(
+            data.RESULT.MESSAGE || "NEIS 오류"
+          );
+        }
+      }
+
+      return data;
+    }
+
+    // ======================================
+    // 4. 학교 코드 조회
+    // API 키 필요 없음
+    // ======================================
+
+    async function getSchoolInfo() {
+      if (schoolInfoCache) {
+        return schoolInfoCache;
+      }
+
+      const params = new URLSearchParams({
+        Type: "json",
+        pIndex: "1",
+        pSize: "5",
+        SCHUL_NM: SCHOOL_NAME
+      });
+
+      const url =
+        `${NEIS_BASE_URL}/schoolInfo?${params}`;
+
+      const data = await requestJson(url);
+
+      const rows = data.schoolInfo?.[1]?.row;
+
+      if (!rows || rows.length === 0) {
+        throw new Error(
+          "학교 정보를 찾을 수 없습니다."
+        );
+      }
+
+      const school = rows.find(
+        row => row.SCHUL_NM === SCHOOL_NAME
+      );
+
+      if (!school) {
+        throw new Error(
+          "정확히 일치하는 학교를 찾지 못했습니다."
+        );
+      }
+
+      officeCode = school.ATPT_OFCDC_SC_CODE;
+      schoolCode = school.SD_SCHUL_CODE;
+
+      schoolInfoCache = {
+        officeCode,
+        schoolCode,
+        schoolName: school.SCHUL_NM
+      };
+
+      document.getElementById("schoolName").textContent =
+        school.SCHUL_NM;
+
+      return schoolInfoCache;
+    }
+
+    // ======================================
+    // 5. 급식 정보 조회
+    // API 키 필요 없음
+    // ======================================
+
+    async function getMeal(date) {
+      const school = await getSchoolInfo();
+
+      const params = new URLSearchParams({
+        Type: "json",
+        pIndex: "1",
+        pSize: "5",
+        ATPT_OFCDC_SC_CODE: school.officeCode,
+        SD_SCHUL_CODE: school.schoolCode,
+        MLSV_YMD: formatDate(date),
+        MMEAL_SC_CODE: "2"
+      });
+
+      const url =
+        `${NEIS_BASE_URL}/mealServiceDietInfo?${params}`;
+
+      const data = await requestJson(url);
+
+      return data.mealServiceDietInfo?.[1]?.row || [];
+    }
+
+    // ======================================
+    // 6. 급식 메뉴 분리
+    // ======================================
+
+    function parseDishNames(html) {
+      if (!html) {
+        return [];
+      }
+
+      return html
+        .split(/<br\s*\/?>/i)
+        .map(item => {
+          return item
+            .replace(/<[^>]*>/g, "")
+            .replace(/&amp;/g, "&")
+            .replace(/&nbsp;/g, " ")
+            .trim();
+        })
+        .filter(Boolean);
+    }
+
+    // ======================================
+    // 7. 급식 메뉴 화면 표시
+    // ======================================
+
+    function displayMeal(meal) {
+      const menus = parseDishNames(meal.DDISH_NM);
+
+      menuEl.replaceChildren();
+
+      if (menus.length === 0) {
+        menuEl.textContent =
+          "등록된 급식 메뉴가 없습니다.";
+
+        return;
+      }
+
+      menus.forEach(menuName => {
+        const item = document.createElement("div");
+        item.className = "menu-item";
+
+        const name = document.createElement("div");
+        name.className = "menu-name";
+        name.textContent = menuName;
+
+        const calorie = document.createElement("div");
+        calorie.className = "menu-calorie";
+
+        calorie.textContent =
+          "개별 칼로리 정보 미제공";
+
+        item.appendChild(name);
+        item.appendChild(calorie);
+
+        menuEl.appendChild(item);
+      });
+
+      calorieEl.textContent =
+        meal.CAL_INFO || "정보 없음";
+    }
+
+    // ======================================
+    // 8. 급식 정보 불러오기
+    // ======================================
+
+    async function loadMeal() {
+      const currentRequest = ++requestId;
+      const requestedDate = new Date(selectedDate);
+
+      menuEl.textContent =
+        "급식 정보를 불러오는 중...";
+
+      calorieEl.textContent = "- kcal";
+      statusEl.textContent = "";
+
+      try {
+        const meals = await getMeal(requestedDate);
+
+        // 날짜를 빠르게 바꾼 경우
+        // 오래된 요청의 응답은 무시
+        if (currentRequest !== requestId) {
+          return;
+        }
+
+        if (meals.length === 0) {
+          menuEl.innerHTML =
+            '<div class="empty">해당 날짜에는 급식 정보가 없습니다.</div>';
+
+          statusEl.textContent =
+            "주말, 공휴일 또는 급식 미등록일일 수 있습니다.";
+
+          return;
+        }
+
+        const meal = meals[0];
+
+        displayMeal(meal);
+
+        statusEl.textContent =
+          "출처: NEIS 교육정보 개방 포털";
+
+      } catch (error) {
+        if (currentRequest !== requestId) {
+          return;
+        }
+
+        console.error(error);
+
+        menuEl.textContent =
+          "급식 정보를 가져오지 못했습니다.";
+
+        calorieEl.textContent = "- kcal";
+
+        statusEl.textContent =
+          error.message +
+          " 네트워크 연결 및 API 응답을 확인해 주세요.";
+      }
+    }
+
+    // ======================================
+    // 9. 버튼 이벤트
+    // ======================================
+
+    document.getElementById("prevBtn")
+      .addEventListener("click", () => {
+        changeDate(-1);
+      });
+
+    document.getElementById("nextBtn")
+      .addEventListener("click", () => {
+        changeDate(1);
+      });
+
+    document.getElementById("todayBtn")
+      .addEventListener("click", goToday);
+
+    document.getElementById("refreshBtn")
+      .addEventListener("click", loadMeal);
+
+    // ======================================
+    // 10. 앱 시작
+    // ======================================
+
+    displayDate();
+    loadMeal();
+
+  </script>
+
+</body>
+</html>
